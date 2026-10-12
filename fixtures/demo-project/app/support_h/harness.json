@@ -1,0 +1,9 @@
+{
+  "name": "support_h",
+  "model": { "provider": "bedrock", "modelId": "anthropic.claude-3-5-sonnet-20240620-v1:0" },
+  "tools": [
+    { "type": "agentcore_gateway", "name": "gw", "gatewayArn": "arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/tools-gw-xyz" }
+  ],
+  "skills": [],
+  "memory": { "mode": "existing", "name": "ordersMemory" }
+}

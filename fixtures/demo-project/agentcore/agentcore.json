@@ -1,0 +1,74 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "demo",
+  "version": 1,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "orders_agent", "build": "CodeZip", "entrypoint": "main.py", "codeLocation": "app/orders_agent/",
+      "runtimeVersion": "PYTHON_3_12", "protocol": "HTTP",
+      "envVars": [
+        { "name": "ORDERS_API_KEY", "value": "sk-live-123" },
+        { "name": "LOG_LEVEL", "value": "debug" }
+      ],
+      "connections": [
+        { "to": { "type": "memory", "arn": "arn:aws:bedrock-agentcore:us-east-1:123456789012:memory/ordersMemory-abc123" }, "access": "readwrite" },
+        { "to": { "type": "gateway", "arn": "arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/tools-gw-xyz" } },
+        { "to": { "type": "browser" } }
+      ]
+    },
+    {
+      "name": "planner_agent", "build": "CodeZip", "entrypoint": "main.py", "codeLocation": "app/planner_agent/",
+      "runtimeVersion": "PYTHON_3_12",
+      "capacityProviderConfiguration": { "capacityProviderName": "pool1" }
+    }
+  ],
+  "memories": [
+    { "name": "ordersMemory", "eventExpiryDuration": 30, "strategies": [] },
+    { "name": "planner_agentMemory", "eventExpiryDuration": 30, "strategies": [] }
+  ],
+  "knowledgeBases": [
+    { "type": "AgentCoreKnowledgeBase", "name": "docs_kb", "dataSources": [{ "type": "S3", "uri": "s3://demo-docs/" }], "gateway": "tools-gw" }
+  ],
+  "credentials": [
+    { "authorizerType": "OAuthCredentialProvider", "name": "crm_oauth", "vendor": "CustomOauth2", "clientSecret": "shh-do-not-show" }
+  ],
+  "evaluators": [
+    {
+      "name": "quality", "level": "SESSION",
+      "config": { "llmAsAJudge": { "model": "anthropic.claude-3-5-sonnet-20240620-v1:0", "instructions": "Rate helpfulness", "ratingScale": { "categorical": [{ "label": "good", "definition": "helpful" }] } } }
+    }
+  ],
+  "onlineEvalConfigs": [
+    { "name": "orders_eval", "agent": "orders_agent", "evaluators": ["quality", "missing_eval"], "samplingRate": 10 }
+  ],
+  "agentCoreGateways": [
+    {
+      "name": "tools-gw", "protocolType": "None", "authorizerType": "NONE", "enableSemanticSearch": true, "exceptionLevel": "NONE",
+      "policyEngineConfiguration": { "policyEngineName": "guardrails", "mode": "ENFORCE" },
+      "targets": [
+        { "name": "planner-target", "targetType": "httpRuntime", "httpRuntime": { "runtime": "planner_agent" } },
+        { "name": "crm-mcp", "targetType": "mcpServer", "endpoint": "https://crm.example.com/mcp", "outboundAuth": { "type": "OAUTH", "credentialName": "crm_oauth" } },
+        { "name": "kb-target", "targetType": "connector", "connectorId": "bedrock-knowledge-bases", "configurations": [{ "name": "kb", "parameterValues": { "knowledgeBaseId": "docs_kb" } }] }
+      ]
+    }
+  ],
+  "policyEngines": [
+    { "name": "guardrails", "policies": [{ "name": "deny_refunds", "statement": "forbid(principal, action, resource);", "validationMode": "FAIL_ON_ANY_FINDINGS", "enforcementMode": "ACTIVE" }] }
+  ],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [{ "name": "support_h", "path": "app/support_h" }],
+  "datasets": [],
+  "capacityProviders": [
+    {
+      "name": "pool1", "operatorRoleArn": "arn:aws:iam::123456789012:role/op",
+      "computeConfiguration": { "ec2Configuration": {
+        "launchTemplateSource": { "launchParameters": { "operatingSystem": "LINUX_ARM64", "instanceRequirements": { "allowedInstanceTypes": ["m7g.large"] } } },
+        "vpcConfiguration": { "subnets": ["subnet-12345678"], "securityGroups": ["sg-12345678"] }
+      } }
+    }
+  ],
+  "payments": [],
+  "futureThing": { "x": 1 }
+}
