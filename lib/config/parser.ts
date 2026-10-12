@@ -223,5 +223,69 @@ export function parseAgentCore(input: { root: string; agentcore: unknown; harnes
   return finish(str(doc.name) ?? '(unnamed)');
 }
 
-/** Implemented in Task 4. */
-export function inferEdges(_b: Builder, _doc: Rec, _harnesses: Record<string, unknown>): void {}
+function matchByArn(b: Builder, type: NodeType, arn: string): string | null {
+  const seg = arn.split(/[/:]/).filter(Boolean).pop() ?? '';
+  let best: GraphNode | undefined;
+  for (const n of b.nodes.values()) {
+    if (n.type !== type) continue;
+    if (seg === n.name || seg.startsWith(n.name + '-')) {
+      if (!best || n.name.length > best.name.length) best = n;
+    }
+  }
+  return best?.id ?? null;
+}
+
+function externalNode(b: Builder, kind: string, arn: string | undefined): string {
+  const key = arn ?? kind;
+  const id = `external:${key}`;
+  if (!b.has(id)) b.add('external', arn ? `${kind} (external)` : kind, { type: kind, arn }, { id });
+  return id;
+}
+
+const CONNECTION_TYPES: Record<string, NodeType> = { memory: 'memory', gateway: 'gateway', runtime: 'runtime' };
+
+export function inferEdges(b: Builder, doc: Rec, harnesses: Record<string, unknown>): void {
+  const runtimes = Array.isArray(doc.runtimes) ? doc.runtimes : [];
+  for (const rt of runtimes) {
+    if (!isObj(rt) || !str(rt.name)) continue;
+    const from = nodeId('runtime', rt.name as string);
+    for (const c of Array.isArray(rt.connections) ? rt.connections : []) {
+      if (!isObj(c) || !isObj(c.to) || !str(c.to.type)) continue;
+      const kind = c.to.type as string;
+      const arn = str(c.to.arn);
+      const label = str(c.id) ?? kind;
+      const nodeType = CONNECTION_TYPES[kind];
+      const matched = nodeType && arn ? matchByArn(b, nodeType, arn) : null;
+      if (matched) b.link(from, matched, 'inferred', label, 'runtimes[].connections (ARN matched to project resource)');
+      else b.link(from, externalNode(b, kind, arn), 'declared', label, 'runtimes[].connections');
+    }
+    // naming convention: <runtime>Memory
+    const memId = nodeId('memory', `${rt.name}Memory`);
+    const alreadyLinked = [...b.edges.values()].some((e) => e.from === from && e.to === memId);
+    if (b.has(memId) && !alreadyLinked) b.link(from, memId, 'inferred', 'memory (by name)', 'naming convention <runtime>Memory');
+  }
+
+  for (const [name, hc] of Object.entries(harnesses)) {
+    if (!isObj(hc)) continue;
+    const from = nodeId('harness', name);
+    for (const t of Array.isArray(hc.tools) ? hc.tools : []) {
+      if (isObj(t) && t.type === 'agentcore_gateway' && str(t.gatewayArn)) {
+        const m = matchByArn(b, 'gateway', t.gatewayArn as string);
+        if (m) b.link(from, m, 'inferred', 'gateway tool', 'harness.json tools[].gatewayArn (ARN matched)');
+      }
+    }
+  }
+
+  // connector targets that mention a project KB by name
+  const kbNames = new Set([...b.nodes.values()].filter((n) => n.type === 'knowledgeBase').map((n) => n.name));
+  for (const n of b.nodes.values()) {
+    if (n.type !== 'gatewayTarget' || n.config.connectorId !== 'bedrock-knowledge-bases') continue;
+    const cfgs = Array.isArray(n.config.configurations) ? n.config.configurations : [];
+    for (const c of cfgs) {
+      const pv = isObj(c) && isObj(c.parameterValues) ? c.parameterValues : {};
+      for (const v of Object.values(pv)) {
+        if (typeof v === 'string' && kbNames.has(v)) b.link(n.id, nodeId('knowledgeBase', v), 'inferred', 'knowledge base', 'connector configurations[].parameterValues');
+      }
+    }
+  }
+}

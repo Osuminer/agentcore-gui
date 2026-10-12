@@ -18,7 +18,7 @@ const hasEdge = (g: Graph, from: string, to: string, kind?: 'declared' | 'inferr
 describe('nodes', () => {
   const g = parse();
   it('creates a node per resource across types', () => {
-    expect(g.nodes.length).toBeGreaterThanOrEqual(16);
+    expect(g.nodes.length).toBe(17);
     expect(g.projectName).toBe('demo');
     for (const id of ['runtime:orders_agent', 'memory:ordersMemory', 'gateway:tools-gw', 'gatewayTarget:tools-gw/crm-mcp',
       'policyEngine:guardrails', 'policy:guardrails/deny_refunds', 'harness:support_h', 'capacityProvider:pool1',
