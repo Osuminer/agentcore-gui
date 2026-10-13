@@ -21,7 +21,7 @@ In mock mode, open the bundled fixture by absolute path: `fixtures/demo-project`
 ## Using it
 1. Pick an AWS profile (top bar). If the session is expired, click **Log in**; the device URL and code appear in the bottom drawer.
 2. Open a project directory (must contain `agentcore/agentcore.json`) or choose **New project…**.
-3. Click a node for its config, connections, masked env var names and commands. Solid edges are declared in config; dashed amber edges are inferred (ARN/name matching) and labelled.
+3. Click a node for its config, connections, masked env var names and commands. Solid edges are declared in config; dashed amber edges are inferred (ARN/name matching) and labelled. Drag nodes to rearrange them; positions are remembered per project in this browser only (localStorage), and **Reset layout** returns to the auto-layout.
 4. Every action shows its exact command first. Deploy requires confirming account/region and, if it would remove resources, typing the project name.
 
 ## Safety model
