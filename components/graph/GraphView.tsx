@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Background, Controls, MarkerType, MiniMap, ReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react';
+import { Background, Controls, MarkerType, MiniMap, ReactFlow, applyNodeChanges, type Edge, type Node, type NodeChange } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { Graph, NodeType } from '@/lib/config/types';
 import { layoutGraph, visibleSubgraph } from './layout';
@@ -31,7 +31,23 @@ export default function GraphView({ graph, selectedId, onSelect, onRefresh, load
   }, [graph.root]);
   const pos = useMemo(() => mergePositions(auto, moved), [auto, moved]);
 
+  // React Flow owns each node's measured size and drag state. Rebuilding node objects on every render
+  // drops that, which makes it hide and re-measure every node on each drag frame (visible flicker).
+  // So nodes live in state: graph changes are merged onto the previous objects, and React Flow's own
+  // change objects are applied with applyNodeChanges.
+  const [rfNodes, setRfNodes] = useState<Node[]>([]);
+  useEffect(() => {
+    setRfNodes((prev) => {
+      const old = new Map(prev.map((n) => [n.id, n]));
+      return vn.map((n) => ({
+        ...old.get(n.id),
+        id: n.id, type: 'resource', position: pos[n.id], data: { node: n, selected: n.id === selectedId },
+      }));
+    });
+  }, [vn, pos, selectedId]);
+
   const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setRfNodes((ns) => applyNodeChanges(changes, ns));
     const next: Positions = {};
     for (const c of changes) if (c.type === 'position' && c.position) next[c.id] = c.position;
     if (Object.keys(next).length > 0) setMoved((m) => ({ ...m, ...next }));
@@ -39,7 +55,6 @@ export default function GraphView({ graph, selectedId, onSelect, onRefresh, load
   const persist = useCallback(() => savePositions(graph.root, movedRef.current), [graph.root]);
   const resetLayout = () => { movedRef.current = {}; setMoved({}); savePositions(graph.root, {}); };
 
-  const rfNodes: Node[] = vn.map((n) => ({ id: n.id, type: 'resource', position: pos[n.id], data: { node: n, selected: n.id === selectedId } }));
   const rfEdges: Edge[] = ve.map((e) => ({
     id: e.id, source: e.from, target: e.to, label: e.label + (e.kind === 'inferred' ? ' (inferred)' : ''),
     animated: false,
