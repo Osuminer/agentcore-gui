@@ -6,6 +6,7 @@ import type { CommandId } from '@/lib/cli/catalog';
 import { postJson } from '@/lib/ui/api';
 import SsoBar from './SsoBar';
 import ProjectPicker from './ProjectPicker';
+import GraphView from './graph/GraphView';
 
 export interface ActiveRun { id: string; title: string }
 export interface PendingAction { commandId: CommandId; params: Record<string, string> }
@@ -46,9 +47,7 @@ export default function AppShell() {
       <main className="relative flex min-h-0 flex-1">
         {!graph && <div className="m-auto text-slate-400">{loading ? 'Loading…' : 'Open a project to see its graph.'}</div>}
         {graph && (
-          <pre className="p-4 text-xs" data-testid="graph-summary">
-            {JSON.stringify({ nodes: graph.nodes.length, edges: graph.edges.length, warnings: graph.warnings.length, note, selectedId, run: activeRun?.id, pending: pending?.commandId, refreshable: typeof refresh, setLoginTick: typeof setLoginTick }, null, 2)}
-          </pre>
+          <GraphView graph={graph} selectedId={selectedId} onSelect={setSelectedId} onRefresh={refresh} loading={loading} />
         )}
       </main>
     </div>
