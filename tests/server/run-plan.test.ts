@@ -3,6 +3,8 @@ import path from 'node:path';
 import { planRun, buildProjectGraph } from '@/lib/server/project';
 
 const fx = path.join(__dirname, '../../fixtures/demo-project');
+// Windows drive-letter case can differ between __dirname and realpath.
+const same = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 beforeAll(() => { process.env.MOCK = '1'; });
 afterAll(() => { delete process.env.MOCK; });
 
@@ -12,7 +14,7 @@ describe('planRun', () => {
     expect(p.exec.file).toBe('agentcore');
     expect(p.exec.args).toEqual(['status', '--json']);
     expect(p.display).toBe('agentcore status --json');
-    expect(path.resolve(p.exec.cwd)).toBe(path.resolve(fx));
+    expect(same(p.exec.cwd, fx)).toBe(true);
     expect(p.exec.env.AWS_PROFILE).toBe('mock-sso');
   });
   it('rejects a command that is not on the allowlist', async () => {
@@ -32,7 +34,7 @@ describe('planRun', () => {
   });
   it('create runs in the output directory, not a project', async () => {
     const p = await planRun({ commandId: 'createDryRun', params: { projectName: 'demo1', agentName: 'agent1', framework: 'VercelAI', modelProvider: 'Bedrock', outputDir: fx } });
-    expect(path.resolve(p.exec.cwd)).toBe(path.resolve(fx));
+    expect(same(p.exec.cwd, fx)).toBe(true);
   });
   it('create refuses a non-existent output directory', async () => {
     await expect(planRun({ commandId: 'createDryRun', params: { projectName: 'demo1', agentName: 'agent1', framework: 'VercelAI', modelProvider: 'Bedrock', outputDir: path.join(fx, 'nope') } })).rejects.toThrow();
