@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Run, childEnv, execReal, runToCompletion, spawnNodeForTest } from '@/lib/exec/run';
+import { Run, childEnv, execReal, runToCompletion, spawnEnv, spawnNodeForTest } from '@/lib/exec/run';
 
 describe('Run', () => {
   it('replays buffered events to late subscribers, then streams', () => {
@@ -67,5 +67,19 @@ describe('spawn plumbing', () => {
     const res = await runToCompletion(run, 10000);
     expect(run.done).toBe(true);
     expect(res.code === 0).toBe(false);
+  });
+});
+
+describe('spawnEnv', () => {
+  it('pins INIT_CWD and PWD to the command cwd so the CLI does not discover the launcher directory', () => {
+    const env = spawnEnv({ file: 'agentcore', args: [], cwd: 'C:\proj', env: { INIT_CWD: 'C:\launcher', PWD: '/launcher', KEEP: '1' } });
+    expect(env.INIT_CWD).toBe('C:\proj');
+    expect(env.PWD).toBe('C:\proj');
+    expect(env.KEEP).toBe('1');
+  });
+  it('does not mutate the spec env', () => {
+    const spec = { file: 'agentcore' as const, args: [], cwd: '/p', env: { INIT_CWD: '/launcher' } };
+    spawnEnv(spec);
+    expect(spec.env.INIT_CWD).toBe('/launcher');
   });
 });

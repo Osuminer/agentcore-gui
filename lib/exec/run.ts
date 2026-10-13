@@ -85,6 +85,14 @@ function attach(run: Run, child: ChildProcess) {
   child.on('close', (code, signal) => run.push({ type: 'exit', code, signal }));
 }
 
+/**
+ * The AgentCore CLI discovers its project from INIT_CWD (set by npm/npx for whatever directory
+ * launched this server) before process.cwd(). Pin both so commands always run against `spec.cwd`.
+ */
+export function spawnEnv(spec: ExecSpec): Env {
+  return { ...spec.env, INIT_CWD: spec.cwd, PWD: spec.cwd };
+}
+
 export function execReal(spec: ExecSpec, display: string): Run {
   const run = new Run(display);
   let resolved: { file: string; prefixArgs: string[] };
@@ -98,7 +106,7 @@ export function execReal(spec: ExecSpec, display: string): Run {
     return run;
   }
   const child = spawn(resolved.file, [...resolved.prefixArgs, ...spec.args], {
-    cwd: spec.cwd, env: spec.env as NodeJS.ProcessEnv, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: spec.cwd, env: spawnEnv(spec) as NodeJS.ProcessEnv, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
   attach(run, child);
   return run;
