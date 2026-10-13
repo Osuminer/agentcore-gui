@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { resolveBinary } from './binary';
+import { resolveBinary, type Env } from './binary';
 import { redact } from './redact';
 
 export type RunEvent =
@@ -9,7 +9,7 @@ export type RunEvent =
   | { type: 'error'; message: string }
   | { type: 'exit'; code: number | null; signal: string | null };
 
-export interface ExecSpec { file: 'agentcore' | 'aws' | 'uv'; args: string[]; cwd: string; env: NodeJS.ProcessEnv }
+export interface ExecSpec { file: 'agentcore' | 'aws' | 'uv'; args: string[]; cwd: string; env: Env }
 
 export class Run {
   id = randomUUID();
@@ -53,8 +53,8 @@ export function registerRun(run: Run) {
 }
 export function getRun(id: string) { return runs.get(id); }
 
-export function childEnv(profile?: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
+export function childEnv(profile?: string, extra: Env = {}): Env {
+  const env: Env = {};
   const KEEP = new Set(['AWS_CONFIG_FILE', 'AWS_SHARED_CREDENTIALS_FILE', 'AWS_EC2_METADATA_DISABLED']);
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined) continue;
@@ -98,7 +98,7 @@ export function execReal(spec: ExecSpec, display: string): Run {
     return run;
   }
   const child = spawn(resolved.file, [...resolved.prefixArgs, ...spec.args], {
-    cwd: spec.cwd, env: spec.env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: spec.cwd, env: spec.env as NodeJS.ProcessEnv, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
   attach(run, child);
   return run;

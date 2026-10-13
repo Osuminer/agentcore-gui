@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+export type Env = Record<string, string | undefined>;
 
 /** npm's Windows .cmd shims end with: "%_prog%"  "%dp0%\node_modules\...\cli.mjs" %* */
 export function parseNpmCmdShim(text: string, dir: string): string | null {
@@ -7,7 +8,7 @@ export function parseNpmCmdShim(text: string, dir: string): string | null {
   return m ? path.join(dir, m[1]) : null;
 }
 
-export function resolveBinary(name: string, env: NodeJS.ProcessEnv = process.env): { file: string; prefixArgs: string[] } {
+export function resolveBinary(name: string, env: Env = process.env): { file: string; prefixArgs: string[] } {
   if (process.platform !== 'win32') return { file: name, prefixArgs: [] };
   // Node >= 18.20 refuses to spawn .cmd/.bat without a shell (EINVAL), so unwrap npm shims.
   const dirs = (env.PATH ?? env.Path ?? '').split(';').filter(Boolean);

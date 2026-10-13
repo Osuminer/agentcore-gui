@@ -1,3 +1,5 @@
+import AppShell from '@/components/AppShell';
+
 export default function Page() {
-  return <main className="p-6">AgentCore Graph</main>;
+  return <AppShell />;
 }
