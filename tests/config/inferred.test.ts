@@ -37,6 +37,55 @@ describe('inferred edges', () => {
   it('connector knowledge base reference -> KB is inferred', () => {
     expect(edge('gatewayTarget:tools-gw/kb-target', 'knowledgeBase:docs_kb')?.kind).toBe('inferred');
   });
+  describe('deployed-resource ARNs carry a project prefix', () => {
+    const arnFor = (kind: string, seg: string) => `arn:aws:bedrock-agentcore:us-east-1:123456789012:${kind}/${seg}`;
+    const project = (connections: unknown[]) => parseAwsGraph(connections);
+    function parseAwsGraph(connections: unknown[]): Graph {
+      return parseAgentCore({
+        root: fx, harnesses: {},
+        agentcore: {
+          name: 'x',
+          runtimes: [
+            { name: 'OrchestratorAgent', connections },
+            { name: 'WeatherAgent' },
+          ],
+          agentCoreGateways: [{ name: 'weather-gateway', targets: [] }],
+        },
+      });
+    }
+    const has = (g: Graph, from: string, to: string) => g.edges.some((e) => e.from === from && e.to === to && e.kind === 'inferred');
+
+    it('links a runtime connection whose ARN is <Project>_<Runtime>-<suffix>', () => {
+      const g = project([{ id: 'weather-agent', to: { type: 'runtime', arn: arnFor('runtime', 'MyProj_WeatherAgent-AbC123xyz') } }]);
+      expect(has(g, 'runtime:OrchestratorAgent', 'runtime:WeatherAgent')).toBe(true);
+      expect(g.nodes.some((n) => n.type === 'external')).toBe(false);
+    });
+    it('links a gateway connection whose ARN is <project>-<gateway>-<suffix>', () => {
+      const g = project([{ id: 'gw', to: { type: 'gateway', arn: arnFor('gateway', 'myproj-weather-gateway-0a1b2c3d4e') } }]);
+      expect(has(g, 'runtime:OrchestratorAgent', 'gateway:weather-gateway')).toBe(true);
+    });
+    it('uses the edge label from the connection id', () => {
+      const g = project([{ id: 'weather-agent', to: { type: 'runtime', arn: arnFor('runtime', 'MyProj_WeatherAgent-AbC123xyz') } }]);
+      expect(g.edges.find((e) => e.to === 'runtime:WeatherAgent')?.label).toBe('weather-agent');
+    });
+    it('does not match a name that is only a substring of another word', () => {
+      const g = project([{ id: 'x', to: { type: 'runtime', arn: arnFor('runtime', 'MyProj_NotWeatherAgent-AbC123xyz') } }]);
+      expect(has(g, 'runtime:OrchestratorAgent', 'runtime:WeatherAgent')).toBe(false);
+    });
+    it('warns about an unmatched ARN, naming the connection and the ARN tail but not the account id', () => {
+      const g = project([{ id: 'weather-agent', to: { type: 'runtime', arn: arnFor('runtime', 'Unrelated_Thing-AbC123xyz') } }]);
+      const w = g.warnings.find((x) => /weather-agent/.test(x.message));
+      expect(w).toBeTruthy();
+      expect(w!.message).toContain('Unrelated_Thing-AbC123xyz');
+      expect(JSON.stringify(g.warnings)).not.toContain('123456789012');
+      expect(g.nodes.some((n) => n.id.startsWith('external:'))).toBe(true);
+    });
+    it('does not warn for connections that are intentionally external (browser, code interpreter)', () => {
+      const g = project([{ id: 'b', to: { type: 'browser' } }]);
+      expect(g.warnings.some((x) => /b/.test(x.scope) && /did not match/.test(x.message))).toBe(false);
+    });
+  });
+
   it('ARN matching prefers the longest name and requires a boundary', () => {
     const g3 = parseAgentCore({
       root: fx, harnesses: {},

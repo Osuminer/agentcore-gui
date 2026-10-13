@@ -223,16 +223,26 @@ export function parseAgentCore(input: { root: string; agentcore: unknown; harnes
   return finish(str(doc.name) ?? '(unnamed)');
 }
 
+/** The resource part of an ARN (after the last "/" or ":"), e.g. "MyProj_WeatherAgent-AbC123". Carries no account id. */
+function arnTail(arn: string): string {
+  return arn.split(/[/:]/).filter(Boolean).pop() ?? '';
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Resolves an ARN to a project resource of `type` by name. Tier 1: the ARN names the resource directly
+ * (`<name>` or `<name>-<suffix>`). Tier 2: deployed names are prefixed with the project
+ * (`<project>_<name>-<suffix>`), so accept the name after a `_` or `-` boundary. Longest name wins in each tier.
+ */
 function matchByArn(b: Builder, type: NodeType, arn: string): string | null {
-  const seg = arn.split(/[/:]/).filter(Boolean).pop() ?? '';
-  let best: GraphNode | undefined;
-  for (const n of b.nodes.values()) {
-    if (n.type !== type) continue;
-    if (seg === n.name || seg.startsWith(n.name + '-')) {
-      if (!best || n.name.length > best.name.length) best = n;
-    }
-  }
-  return best?.id ?? null;
+  const seg = arnTail(arn);
+  const candidates = [...b.nodes.values()].filter((n) => n.type === type);
+  const longest = (list: GraphNode[]) => list.reduce<GraphNode | undefined>((best, n) => (!best || n.name.length > best.name.length ? n : best), undefined);
+  const direct = longest(candidates.filter((n) => seg === n.name || seg.startsWith(n.name + '-')));
+  if (direct) return direct.id;
+  const prefixed = longest(candidates.filter((n) => new RegExp(`[_-]${escapeRe(n.name)}(?:-[A-Za-z0-9]+)?$`).test(seg)));
+  return prefixed?.id ?? null;
 }
 
 function externalNode(b: Builder, kind: string, arn: string | undefined): string {
@@ -257,7 +267,13 @@ export function inferEdges(b: Builder, doc: Rec, harnesses: Record<string, unkno
       const nodeType = CONNECTION_TYPES[kind];
       const matched = nodeType && arn ? matchByArn(b, nodeType, arn) : null;
       if (matched) b.link(from, matched, 'inferred', label, 'runtimes[].connections (ARN matched to project resource)');
-      else b.link(from, externalNode(b, kind, arn), 'declared', label, 'runtimes[].connections');
+      else {
+        if (nodeType && arn) {
+          b.warn(`runtimes[${rt.name}].connections`,
+            `Connection '${label}': ARN ending '${arnTail(arn)}' did not match any ${kind} in this project, so it is shown as an external resource`, from);
+        }
+        b.link(from, externalNode(b, kind, arn), 'declared', label, 'runtimes[].connections');
+      }
     }
     // naming convention: <runtime>Memory
     const memId = nodeId('memory', `${rt.name}Memory`);
