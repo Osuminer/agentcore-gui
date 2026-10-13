@@ -26,6 +26,8 @@ export function sanitize(value: unknown, key = ''): unknown {
     for (const [k, v] of Object.entries(value)) {
       if (k === 'envVars' && Array.isArray(v)) {
         out[k] = v.map((e) => (isObj(e) ? { ...e, value: MASK } : e));
+      } else if (k === 'env' && isObj(v)) {
+        out[k] = Object.fromEntries(Object.keys(v).map((name) => [name, MASK]));
       } else {
         out[k] = sanitize(v, k);
       }

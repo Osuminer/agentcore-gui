@@ -11,8 +11,11 @@ export type RunEvent =
 
 export interface ExecSpec { file: 'agentcore' | 'aws' | 'uv'; args: string[]; cwd: string; env: Env }
 
+const MAX_EVENTS = 5000;
+
 export class Run {
   id = randomUUID();
+  key?: string;
   events: RunEvent[] = [];
   done = false;
   child?: ChildProcess;
@@ -26,6 +29,8 @@ export class Run {
   push(e: RunEvent) {
     if (this.done) return;
     this.events.push(e);
+    // Bound memory for chatty long-running commands (dev --logs): keep 'start' plus the newest events.
+    if (this.events.length > MAX_EVENTS) this.events.splice(1, this.events.length - MAX_EVENTS);
     if (e.type === 'exit') this.done = true;
     for (const l of this.listeners) l(e);
   }
@@ -47,11 +52,21 @@ export class Run {
 const g = globalThis as unknown as { __acRuns?: Map<string, Run> };
 const runs = (g.__acRuns ??= new Map<string, Run>());
 
-export function registerRun(run: Run) {
+/** Registers a run. Finished runs stay inspectable for 30 minutes; running ones are never expired. */
+export function registerRun(run: Run, key?: string) {
+  run.key = key;
   runs.set(run.id, run);
-  setTimeout(() => runs.delete(run.id), 30 * 60 * 1000).unref?.();
+  run.subscribe((e) => {
+    if (e.type === 'exit') setTimeout(() => runs.delete(run.id), 30 * 60 * 1000).unref?.();
+  });
 }
 export function getRun(id: string) { return runs.get(id); }
+
+/** The still-running run registered under `key` (e.g. a project directory), if any. */
+export function activeRunForKey(key: string): Run | undefined {
+  for (const r of runs.values()) if (r.key === key && !r.done) return r;
+  return undefined;
+}
 
 export function childEnv(profile?: string, extra: Env = {}): Env {
   const env: Env = {};
@@ -76,13 +91,31 @@ function killTree(child: ChildProcess) {
 function attach(run: Run, child: ChildProcess) {
   run.child = child;
   run.setCancelHook(() => killTree(child));
-  child.stdout?.on('data', (d: Buffer) => run.push({ type: 'stdout', data: redact(d.toString()) }));
-  child.stderr?.on('data', (d: Buffer) => run.push({ type: 'stderr', data: redact(d.toString()) }));
+  // Redact whole lines: a secret split across two pipe chunks would otherwise slip past every regex.
+  const flushers: (() => void)[] = [];
+  const pipe = (stream: NodeJS.ReadableStream | null | undefined, type: 'stdout' | 'stderr') => {
+    let buf = '';
+    stream?.on('data', (d: Buffer) => {
+      buf += d.toString();
+      const cut = Math.max(buf.lastIndexOf('\n'), buf.lastIndexOf('\r'));
+      if (cut < 0) return;
+      const complete = buf.slice(0, cut + 1);
+      buf = buf.slice(cut + 1);
+      run.push({ type, data: redact(complete) });
+    });
+    flushers.push(() => { if (buf) { run.push({ type, data: redact(buf) }); buf = ''; } });
+  };
+  pipe(child.stdout, 'stdout');
+  pipe(child.stderr, 'stderr');
   child.on('error', (err: NodeJS.ErrnoException) => {
+    flushers.forEach((f) => f());
     run.push({ type: 'error', message: err.code === 'ENOENT' ? `Executable not found: ${err.message}` : err.message });
     run.push({ type: 'exit', code: null, signal: null });
   });
-  child.on('close', (code, signal) => run.push({ type: 'exit', code, signal }));
+  child.on('close', (code, signal) => {
+    flushers.forEach((f) => f());
+    run.push({ type: 'exit', code, signal });
+  });
 }
 
 /**

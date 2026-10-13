@@ -101,6 +101,16 @@ describe('warnings (never throw)', () => {
   });
 });
 
+describe('harness env masking', () => {
+  it('masks values of a harness env map but keeps the names', () => {
+    const g = parse({ harnesses: { support_h: { ...harness, env: { DB_URL: 'postgres://u:pw@h/db', MODE: 'x' } } } });
+    const n = g.nodes.find((x) => x.id === 'harness:support_h')!;
+    expect(n.envVarNames).toEqual(['DB_URL', 'MODE']);
+    expect(JSON.stringify(n.config)).not.toContain('postgres://u:pw@h/db');
+    expect(JSON.stringify(n.config)).toContain('DB_URL');
+  });
+});
+
 describe('nodeId', () => {
   it('namespaces by type', () => {
     expect(nodeId('runtime', 'a')).toBe('runtime:a');

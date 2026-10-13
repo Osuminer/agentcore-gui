@@ -18,6 +18,11 @@ describe('redact', () => {
     expect(redact('"clientSecret": "s3cr3t"')).not.toContain('s3cr3t');
     expect(redact('accessToken=abc123')).not.toContain('abc123');
   });
+  it('masks PascalCase / camelCase AWS credential JSON fields', () => {
+    expect(redact('"SecretAccessKey": "wJalrXUtnFEMI/K7MDENG"')).not.toContain('wJalrXUtnFEMI');
+    expect(redact('{"secretAccessKey":"abcSECRET123"}')).not.toContain('abcSECRET123');
+    expect(redact('"SessionToken": "FwoGZXIvYXdzEJr"')).not.toContain('FwoGZXIvYXdzEJr');
+  });
   it('leaves ordinary text alone', () => {
     expect(redact('Deploying orders_agent... done')).toBe('Deploying orders_agent... done');
   });

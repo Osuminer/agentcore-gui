@@ -24,17 +24,24 @@ export default function RunDialog({ action, projectPath, profile, onCancel, onSt
   const [err, setErr] = useState<string | null>(null);
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [previewFor, setPreviewFor] = useState('');
 
   useEffect(() => {
-    setParams(action?.params ?? {}); setPreview(null); setNeed(null); setTyped(''); setErr(null); setAck(false);
+    setParams(action?.params ?? {}); setPreview(null); setPreviewFor(''); setNeed(null); setTyped(''); setErr(null); setAck(false);
   }, [action]);
 
+  // Debounced so typing doesn't spawn an `aws sts` call per keystroke; previewFor records which params
+  // the displayed command was built from so Run can't be clicked while it is stale.
   useEffect(() => {
     if (!action) return;
     let live = true;
-    postJson<Preview>('/api/run/preview', { commandId: action.commandId, params, projectPath: projectPath || undefined, profile: profile || undefined })
-      .then((p) => live && setPreview(p)).catch((e) => live && setErr(e.message));
-    return () => { live = false; };
+    const snapshot = JSON.stringify(params);
+    const t = setTimeout(() => {
+      postJson<Preview>('/api/run/preview', { commandId: action.commandId, params, projectPath: projectPath || undefined, profile: profile || undefined })
+        .then((p) => { if (live) { setPreview(p); setPreviewFor(snapshot); } })
+        .catch((e) => live && setErr(e.message));
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
   }, [action, params, projectPath, profile]);
 
   if (!action) return null;
@@ -42,7 +49,8 @@ export default function RunDialog({ action, projectPath, profile, onCancel, onSt
   const identOk = ident?.ok ? ident : null;
   const isDeploy = action.commandId === 'deploy';
   const region = identOk?.region;
-  const blocked = (preview?.touchesAws && !profile) || (preview?.touchesAws && ident && !ident.ok) || !!preview?.problem
+  const stale = previewFor !== JSON.stringify(params);
+  const blocked = stale || (preview?.touchesAws && !profile) || (preview?.touchesAws && ident && !ident.ok) || !!preview?.problem
     || (isDeploy && !ack) || (!!need && typed !== need.projectName);
 
   async function run() {
@@ -84,7 +92,7 @@ export default function RunDialog({ action, projectPath, profile, onCancel, onSt
           </label>
         ))}
 
-        <div className="mt-3 text-xs text-slate-400">Exact command</div>
+        <div className="mt-3 text-xs text-slate-400">Exact command{stale && preview ? ' (updating…)' : ''}</div>
         <pre className="mt-1 overflow-x-auto rounded bg-black/50 p-2 font-mono text-xs text-emerald-300" data-testid="exact-command">{preview?.display ?? '…'}</pre>
         {preview?.problem && <p className="mt-1 text-xs text-amber-300">{preview.problem}</p>}
 

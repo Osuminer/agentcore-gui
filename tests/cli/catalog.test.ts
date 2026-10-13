@@ -78,6 +78,17 @@ describe('validateParams', () => {
   });
 });
 
+describe('path params', () => {
+  const base = { projectName: 'demo1', agentName: 'agent1', framework: 'VercelAI', modelProvider: 'Bedrock' };
+  it('rejects a relative outputDir (the CLI would resolve it differently than cwd)', () => {
+    expect(() => validateParams(COMMANDS.create, { ...base, outputDir: 'projects' })).toThrow(ParamError);
+    expect(() => validateParams(COMMANDS.create, { ...base, outputDir: '../x' })).toThrow(ParamError);
+  });
+  it.each(['C:/work', 'C:\\work', '/work', '\\\\server\\share'])('accepts absolute path %s', (p) => {
+    expect(() => validateParams(COMMANDS.create, { ...base, outputDir: p })).not.toThrow();
+  });
+});
+
 describe('displayCommand', () => {
   it('quotes args with spaces', () => {
     expect(displayCommand('agentcore', ['invoke', '--prompt=hello world'])).toBe('agentcore invoke "--prompt=hello world"');

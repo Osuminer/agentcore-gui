@@ -2,7 +2,8 @@ import { planRun } from '@/lib/server/project';
 import { findProfile, getIdentity } from '@/lib/aws/identity';
 import { COMMANDS, displayCommand } from '@/lib/cli/catalog';
 import { parseStatusOutput } from '@/lib/cli/parsers';
-import { runToCompletion } from '@/lib/exec/run';
+import { activeRunForKey, runToCompletion } from '@/lib/exec/run';
+import { deployGate } from '@/lib/server/deploy-gate';
 import { startExec } from '@/lib/exec';
 import { handle, json, readJson } from '@/lib/server/http';
 export const dynamic = 'force-dynamic';
@@ -26,14 +27,13 @@ export const POST = (req: Request) => handle(async () => {
       const sargs = COMMANDS.status.build({});
       const sres = await runToCompletion(startExec(
         { file: 'agentcore', args: sargs, cwd: plan.exec.cwd, env: plan.exec.env }, displayCommand('agentcore', sargs)), 60_000);
-      const st = parseStatusOutput(sres.stdout);
-      const pending = st.ok ? st.resources.filter((r) => r.deploymentState === 'pending-removal').map((r) => `${r.resourceType}:${r.name}`) : [];
-      if (pending.length > 0) {
-        const projectName = plan.exec.cwd.split(/[\\/]/).pop() ?? '';
-        if (c.typedName !== projectName) return json({ needsTypedName: true, resources: pending, projectName }, 409);
-      }
+      const projectName = plan.exec.cwd.split(/[\\/]/).pop() ?? '';
+      const gate = deployGate(parseStatusOutput(sres.stdout), c.typedName, projectName);
+      if (gate.kind === 'needs-typed') return json({ needsTypedName: true, resources: gate.resources, projectName }, 409);
     }
   }
-  const run = startExec(plan.exec, plan.display);
+  const busy = activeRunForKey(plan.exec.cwd);
+  if (busy) return json({ error: 'A command is already running for this project. Stop it first.', runId: busy.id }, 423);
+  const run = startExec(plan.exec, plan.display, plan.exec.cwd);
   return json({ runId: run.id, display: plan.display });
 });

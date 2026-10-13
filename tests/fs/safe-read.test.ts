@@ -64,6 +64,15 @@ describe('safeReadText', () => {
     const root = await resolveProjectRoot(project);
     await expect(safeReadText(root, 'agentcore/.env.local')).rejects.toBeInstanceOf(PathEscapeError);
   });
+  it('never reads a .env file reached through a symlink with an innocuous name', async () => {
+    const root = await resolveProjectRoot(project);
+    try {
+      await fs.symlink(path.join(project, 'agentcore', '.env.local'), path.join(project, 'agentcore', 'harmless.json'), 'file');
+    } catch {
+      return; // file symlinks need privileges on Windows; exercised where permitted
+    }
+    await expect(safeReadText(root, 'agentcore/harmless.json')).rejects.toBeInstanceOf(PathEscapeError);
+  });
   it('enforces a size cap', async () => {
     const root = await resolveProjectRoot(project);
     await expect(safeReadText(root, 'agentcore/agentcore.json', { maxBytes: 3 })).rejects.toThrow(/too large/i);

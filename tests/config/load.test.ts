@@ -23,6 +23,25 @@ describe('loadProject', () => {
     expect(g.warnings.some((w) => /agentcore\.json/.test(w.scope))).toBe(true);
     await fs.rm(dir, { recursive: true, force: true });
   });
+  it('does not leak the content of a non-JSON agentcore.json into warnings', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'acgui-leak-'));
+    await fs.mkdir(path.join(dir, 'agentcore'));
+    await fs.writeFile(path.join(dir, 'agentcore', 'agentcore.json'), 'OPENAI_KEY=sk-abc123');
+    const g = await loadProject(await resolveProjectRoot(dir));
+    expect(JSON.stringify(g.warnings)).not.toContain('sk-abc123');
+    expect(g.warnings.some((w) => /not valid JSON/i.test(w.message))).toBe(true);
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+  it('does not leak the content of a non-JSON harness.json into warnings', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'acgui-leak2-'));
+    await fs.mkdir(path.join(dir, 'agentcore'));
+    await fs.mkdir(path.join(dir, 'app', 'h'), { recursive: true });
+    await fs.writeFile(path.join(dir, 'agentcore', 'agentcore.json'), JSON.stringify({ name: 'x', harnesses: [{ name: 'h', path: 'app/h' }] }));
+    await fs.writeFile(path.join(dir, 'app', 'h', 'harness.json'), 'SECRET_TOKEN=sk-zzz999');
+    const g = await loadProject(await resolveProjectRoot(dir));
+    expect(JSON.stringify(g)).not.toContain('sk-zzz999');
+    await fs.rm(dir, { recursive: true, force: true });
+  });
   it('does not follow a harness path that escapes the project', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'acgui-esc-'));
     await fs.mkdir(path.join(dir, 'agentcore'));

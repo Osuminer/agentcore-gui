@@ -87,7 +87,10 @@ export function validateParams(spec: CommandSpec, params: unknown): Record<strin
       case 'name': if (!NAME.test(v)) throw new ParamError(`'${f.key}' must match ${NAME}`); break;
       case 'enum': if (!f.options!.includes(v)) throw new ParamError(`'${f.key}' must be one of ${f.options!.join(', ')}`); break;
       case 'text': if (v.length > 8000) throw new ParamError(`'${f.key}' is too long (max 8000)`); break;
-      case 'path': if (v.length > 1024 || v.startsWith('-') || /[\r\n]/.test(v)) throw new ParamError(`'${f.key}' is not a valid path`); break;
+      case 'path':
+        // Absolute only: the CLI resolves relative paths against INIT_CWD, not the cwd we validated.
+        if (v.length > 1024 || /[\r\n]/.test(v) || !/^([A-Za-z]:[\\/]|\/|\\\\)/.test(v)) throw new ParamError(`'${f.key}' must be an absolute path`);
+        break;
     }
     out[f.key] = v;
   }

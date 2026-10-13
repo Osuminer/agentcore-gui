@@ -77,7 +77,12 @@ export default function AppShell() {
         )}
       </main>
       <CommandDrawer
-        run={activeRun} onClose={() => setActiveRun(null)}
+        run={activeRun}
+        onClose={() => {
+          // Closing the drawer must not orphan a still-running command (e.g. dev or deploy): cancel it first.
+          if (activeRun) void fetch(`/api/run/${activeRun.id}`, { method: 'DELETE' }).catch(() => {});
+          setActiveRun(null);
+        }}
         onExit={(code) => {
           if (activeRun?.title.startsWith('Log in')) setLoginTick((t) => t + 1);
           else if (code === 0 && graph) refresh();

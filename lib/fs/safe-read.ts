@@ -37,6 +37,7 @@ export async function safeReadText(root: string, rel: string, opts: { maxBytes?:
   if (/^\.env/i.test(path.basename(resolved))) throw new PathEscapeError('Environment files are never read');
   const real = await fs.realpath(resolved);
   if (!isInside(root, real)) throw new PathEscapeError(`Path resolves outside project: ${rel}`);
+  if (/^\.env/i.test(path.basename(real))) throw new PathEscapeError('Environment files are never read');
   const st = await fs.stat(real);
   const max = opts.maxBytes ?? DEFAULT_MAX_BYTES;
   if (st.size > max) throw new Error(`File too large (${st.size} bytes, max ${max}): ${rel}`);

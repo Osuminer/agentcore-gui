@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Run, childEnv, execReal, runToCompletion, spawnEnv, spawnNodeForTest } from '@/lib/exec/run';
+import { Run, activeRunForKey, childEnv, execReal, registerRun, runToCompletion, spawnEnv, spawnNodeForTest } from '@/lib/exec/run';
 
 describe('Run', () => {
   it('replays buffered events to late subscribers, then streams', () => {
@@ -81,5 +81,42 @@ describe('spawnEnv', () => {
     const spec = { file: 'agentcore' as const, args: [], cwd: '/p', env: { INIT_CWD: '/launcher' } };
     spawnEnv(spec);
     expect(spec.env.INIT_CWD).toBe('/launcher');
+  });
+});
+
+describe('redaction across chunk boundaries', () => {
+  it('redacts a token that arrives split over two writes', async () => {
+    const run = spawnNodeForTest(['-e', "process.stdout.write('Authorization: Bearer abc.de'); setTimeout(()=>process.stdout.write('f-ghi_123\\n'), 150)"]);
+    const res = await runToCompletion(run, 10000);
+    expect(res.stdout).not.toContain('abc.de');
+    expect(res.stdout).not.toContain('f-ghi_123');
+    expect(res.stdout).toContain('[redacted]');
+  });
+  it('flushes a final line that has no trailing newline', async () => {
+    const run = spawnNodeForTest(['-e', "process.stdout.write('no newline here')"]);
+    expect((await runToCompletion(run, 10000)).stdout).toBe('no newline here');
+  });
+});
+
+describe('run registry', () => {
+  it('reports the active run for a key until it exits', () => {
+    const r = new Run('x');
+    registerRun(r, 'proj-key');
+    expect(activeRunForKey('proj-key')).toBe(r);
+    r.push({ type: 'exit', code: 0, signal: null });
+    expect(activeRunForKey('proj-key')).toBeUndefined();
+  });
+  it('returns undefined for an unknown key', () => {
+    expect(activeRunForKey('nope')).toBeUndefined();
+  });
+});
+
+describe('Run event buffer', () => {
+  it('caps stored events but keeps the start event', () => {
+    const r = new Run('x');
+    for (let i = 0; i < 6000; i++) r.push({ type: 'stdout', data: `l${i}\n` });
+    expect(r.events.length).toBeLessThanOrEqual(5000);
+    expect(r.events[0].type).toBe('start');
+    expect(r.events[r.events.length - 1]).toEqual({ type: 'stdout', data: 'l5999\n' });
   });
 });
